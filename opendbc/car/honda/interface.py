@@ -85,31 +85,14 @@ class CarInterface(CarInterfaceBase):
     ret.lateralTuning.pid.kf = 0.00006  # conservative feed-forward
 
     if candidate in HONDA_BOSCH:
-        # snappier reaction
-        ret.longitudinalActuatorDelay = 0.3  # s
-        if candidate in HONDA_BOSCH_RADARLESS:
-            # gentler full stop
-            ret.stopAccel = -2.0  # m/s^2
-
+      ret.longitudinalActuatorDelay = 0.5 # s
+      if candidate in HONDA_BOSCH_RADARLESS:
+        ret.stopAccel = CarControllerParams.BOSCH_ACCEL_MIN  # stock uses -4.0 m/s^2 once stopped but limited by safety model
+        
     else:
-        # breakpoints: 0, 5, 20, 35 mph
-        ret.longitudinalTuning.kpBP = [0., 5., 20., 35.]
-        ret.longitudinalTuning.kpV   = [1.4, 1.3, 0.9, 0.6]
-    
-        ret.longitudinalTuning.kiBP = [0., 5., 20., 35.]
-        ret.longitudinalTuning.kiV   = [1.2, 1.0, 0.7, 0.4]
-    
-        # cap gas so you don’t gun it past setpoint
-        ret.longitudinalTuning.gasMaxBP = [0., 20., 35.]
-        ret.longitudinalTuning.gasMaxV  = [0.5, 0.3, 0.2]
-    
-        # allow harder braking around stop, but not slam at speed
-        ret.longitudinalTuning.brakeMaxBP = [0., 20., 35.]
-        ret.longitudinalTuning.brakeMaxV  = [0.5, 0.8, 1.0]
-    
-        # tighten deadzone so small errors don’t sit uncorrected
-        ret.longitudinalTuning.deadzoneBP = [0., 5.]
-        ret.longitudinalTuning.deadzoneV  = [0.0, 0.1]
+      # default longitudinal tuning for all hondas
+      ret.longitudinalTuning.kiBP = [0., 5., 35.]
+      ret.longitudinalTuning.kiV = [1.2, 0.8, 0.5]
 
     eps_modified = False
     for fw in car_fw:
