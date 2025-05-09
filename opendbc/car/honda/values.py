@@ -117,7 +117,6 @@ class HondaCarDocs(CarDocs):
     else:
       self.car_parts = CarParts.common([harness])
 
-
 class Footnote(Enum):
   CIVIC_DIESEL = CarFootnote(
     "2019 Honda Civic 1.6L Diesel Sedan does not have ALC below 12mph.",
