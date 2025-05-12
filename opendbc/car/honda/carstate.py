@@ -93,6 +93,8 @@ class CarState(CarStateBase):
       self.gearbox_msg = "GEARBOX_15T"
     elif CP.carFingerprint == CAR.HONDA_CIVIC_2022 and CP.transmissionType == TransmissionType.cvt:
       self.gearbox_msg = "GEARBOX_ALT"
+    elif CP.carFingerprint == CAR.HONDA_CRV_6G:
+      self.gearbox_msg = "GEARBOX_15T"
     elif CP.transmissionType == TransmissionType.manual:
       self.gearbox_msg = "GEARBOX_ALT_2"
 
