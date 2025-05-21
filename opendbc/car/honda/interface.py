@@ -125,7 +125,7 @@ class CarInterface(CarInterfaceBase):
         ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.6], [0.18]]
 
     elif candidate == CAR.HONDA_ACCORD_11G:
-      ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 8192], [0, 8192]]
+      ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 16384], [0, 16384]]
       ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.2], [0.18]]
       CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 1060]
 
