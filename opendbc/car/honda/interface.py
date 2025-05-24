@@ -137,7 +137,9 @@ class CarInterface(CarInterfaceBase):
 
       ret.lateralTuning.pid.kiBP = [0.0, 10.0, 20.0]
       ret.lateralTuning.pid.kiV = [0.03, 0.08, 0.14]
-      
+
+      ret.steerActuatorDelay = 0.2
+
       CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 1060]
 
     elif candidate == CAR.ACURA_ILX:
