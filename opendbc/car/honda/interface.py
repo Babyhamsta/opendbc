@@ -126,8 +126,8 @@ class CarInterface(CarInterfaceBase):
 
     elif candidate == CAR.HONDA_ACCORD_11G:
       ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 12288], [0, 12288]]
-      ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.2], [0.18]] # Original tune by Hamsta on 4096 torque.
-      ret.steerActuatorDelay = 0.2
+      #ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.2], [0.18]] # Original tune by Hamsta on 4096 torque.
+      ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.45], [0.18]]
 
       CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 1060]
 

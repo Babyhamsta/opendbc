@@ -1,0 +1,207 @@
+![Tuning](https://user-images.githubusercontent.com/37757984/83087550-658b3c00-a046-11ea-9744-8f1e51fa8009.png)
+
+[◄ Home](//github.com/commaai/openpilot/wiki)
+
+## Using PlotJuggler
+Using PlotJuggler helps objectively determine if you are tuning in the "right direction" A quick tutorial for openpilot can be found [here](//youtu.be/DgcMeTpHZnE).
+
+## Breakpoint (`BP`) and Value (`V`) Lists
+When you see `xBP` and `xV`, that means that the speeds defined in the breakpoint list (`xBP`) correspond to the values in the value (`xV`) list.
+
+For example, take `xBP = [0., 5., 35.]` (in m/s) and `xV = [1.0, 1.5, 2.0]`
+
+If code is easier to read than English, `np.interp(20, [0., 5., 35.], [1.0, 1.5, 2.0]) = 1.75`
+
+When you are traveling `5` m/s, `1.5` is the value that openpilot uses, for `35` m/s, `2.0` is the corresponding value. Speeds in between the defined speeds in `xBP` are **linearly interpolated**, so if you're halfway between `5` and `35` m/s the output will be halfway between `1.5` and `2.0`.
+
+Use the [speed conversion table](#speed-conversion-table) for quick conversions.
+
+# Lateral Tuning
+Tuning is done mainly in `tunes.py` OR `interface.py`. Tunes are in different places for different OEMs.
+
+## PI Tuning Strategy
+
+PI tuning is done mainly in `tunes.py` OR `interface.py`, depends on OEM.
+
+These are the relevant `CarParams` values that need adjustment:
+
+```python
+# selfdrive/car/<make>/interface.py OR selfdrive/car/<make>/tunes.py
+
+ret.steerRatio = 16.8
+ret.steerRateCost = 0.5
+ret.steerActuatorDelay = 0.
+ret.lateralTuning.pid.kpBP = [10., 41.0]
+ret.lateralTuning.pid.kpV = [0.18, 0.275]
+ret.lateralTuning.pid.kiBP = [10., 41.0]
+ret.lateralTuning.pid.kiV = [0.01, 0.021]
+ret.lateralTuning.pid.kf = 0.0002
+```
+
+Note that `steerRatio` is part of `liveParams` automatically calculated, but doesn't seem to be used yet, so the value in `interface.py` can have a large impact.
+
+`steerActuatorDelay` is _vital_ (as it is INDI), and should be adjusted first. This can be relatively easily calculated in PlotJuggler by overlaying the desired torque with the actual torque graphs for even a short drive. Even very small adjustments can have a huge impact on cornering.
+
+The PI controller has 3 sets of settings. Proportional, Integral, and Feedforward. Reviewing the [Wikipedia article on PID controllers](//en.wikipedia.org/wiki/PID_controller) to get a basic understanding of the purpose of these.
+
+`kpBP` and `kiBP` are generally identical. The [breakpoint](breakpoint-bp-and-value-v-lists) units are [meters/s](speed-conversion-table) and apply to the vehicle speed. Most cars only have two BPs - a low speed and a high speed (41 m/s is about 90 mph for example). The purpose of these tuning arrays is to tweak the proportional and integral gain based on vehicle speed.
+
+`kpV` and `kiV` are gain applied to the output of the I and P calculation, which is a scale of 0 to +-1, 0 being no torque, +-1 being 100% of available torque in either direction. This is a gross simplification, but should help get the rough idea.
+
+##### Conceptual descriptions of the PIDF components:
+* **Feedforward** is the part of the steering controller that only cares about the desired steering angle (how sharp the curve is). So feedforward only comes into play in curves when the desired steering angle is non-zero, and the greater the angle, the greater the feedforward response, which is scaled by kf. To tune kf, you observe if OpenPilot enters curves too early/late and rides curves too far inside/outside. If it enters too early (late) and/or rides too far inside (outside), then kf is too high (low) and should be lowered (raised) in 10% increments until it enters correctly and rides center. 
+* **Proportional** gain responds proportionally to the instantaneous error being controlled. The greater the error, the greater the corrective response, linearly, and scaled according to kp. In this case, where we're controlling the steering angle, the proportional gain alone cannot completely correct for error, becuase when the error is close to zero, so is the proportional response. The best way to tune kp is then using nudgeless lane change on straight roads (no feedforward response), which creates a sudden (so doesn't trigger the integral response) change in course that results in a reproducible error source that triggers the proportional and derivative responses. Set kd to zero to best assess kp. If the lane change feels too assertive or jerky, lower kp. If too weak, increase kp. 
+* **Integral** gain responds based on the accumulated error, so if you're missing the target continually, the integral response builds the longer you're off in the same direction. This corrects for things like persistent crosswinds, inconsistent tire pressures, or dramatic road roll that roll compensation fails to fully compensate for. The drawback is that integral gain can "wind up", overshooting the desired angle, causing lateral oscillations, ping-ponging back and forth about lane center.
+* **Derivative** gain responds to the rate of change of error. The benefits are two-fold. First, note that the proportional and integral responses always push against the error until the error is zero (and due to integral wind-up, integral can push past zero even), which necessarily results in overshoot and oscillations. In such an overshooting case, when you're returning to lane center and the error (let's say positive) is decreasing, the error rate wil be negative even though the error is still positive, so the derivative response is pushing against the proportional and integral overshoot. Second, if you're quickly leaving lane center then the rate of change of error is positive along with the error, so the derivative here helps along with the proportional and integral responses to correct for the error. Too high of kd is indicated by a jerky initial correction when using nudgeles lane change on straight roads.
+* **Simple tuning strategy**: Tune kf and kp with ki set to zero, then set ki to 1/10th the value of kp or less, and kd to 1/20th the value of kp or less. If lateral oscillations occur, lower ki in 10% increments until they are no longer observed. 
+
+The following is a procedure based on suggestions from @clockenessmnstr:
+
+Note: Tune `kf` and `kp`/`ki` separately.
+1. With the `kp` & `ki` set at 0, look through the OP code for a similar vehicle's `kf` to use as a starting point.
+Or start with `0.00001`. `kf` only applies to curves, so when testing don't worry about straightaway behavior.
+If you start with `0.00001`, try `0.00003` and test again. Use your judgement on how much to increase each time
+`kf` alone should make the steering angle close to target angle in a harder turn - but will not necessarily be properly aligned. This is ok.
+Increase `kf` until the car almost makes turns, but doesn't over shoot / oversteer on it's own.
+If `kf` is too high, it will turn too hard, pact the correct curvature, or at the end of a curve it will have trouble straightening out.
+3. Sometimes actuator delay can be fine tuned a little once `kf` is "going through" turns.
+The only steering OP does at this point is for turns, so turn initiation timing should be obvious.
+Pay close attention to when OP begins turning the wheel. If it seem too early or too late, adjust the actuator delay. TINY Adjustments!
+   Lower delay "waits to turn longer", higher delay "starts the turn sooner"
+4. Set `kf` to `0`, and start tuning `kp`. Again, use an initial value of a similar car.
+`kp` turns the wheel to get you back to center. As you increase it, the car will center better and better, then it will begin to oscillate (i.e. over shoot in one direction, then the other back and forth). Increase it till it centers well and starts to oscillate.
+5. Then cut back `kp` so it doesn't oscillate *anywhere* (turns/straights/pulling the wheel for a second)
+6. Leaving `kp` on, `ki` can then be introduced and raised to smooth out and hold center and hold turns. This is a very powerful setting, and as you add it, the car may begin to oscillate. If it does, nudge `kp` down a bit. `ki` applies to "persistent" errors - sidewinds, slanted roads, and centering in long curves. It has a smoothing impact. Increase it till it starts causing problems (too rigid maybe?)
+7. Now reintroduce `kf`. Watch for oscillations again. If they are only showing up in curves, lower `kf` (small steps) and/or `kp` just a tiny bit at a time. Oscillations on straight sections just reduce `kp`. If it is overshooting curves, or seeming to "keep turning too long", "taking too long to straighten out", you may need to reduce `ki` (although I have found tiny reductions in `kf` to resolve this as well)
+8. Once again, watch when it enters turns very closely, and if it's too early or too late adjust steer actuator delay accordingly.
+
+This process can be very time consuming - there are several options out there with live tune adjusting abilities while riding as a passenger.
+
+## INDI Tuning Strategy
+ - Search Discord / Github for prior INDI tuning efforts for your vehicle
+ - Vary one parameter at a time, by less than `10%`. Parameters affect each other.
+ - Use a well known test route with excellent lane markings, long straights, varying curvature, varying speeds.
+  - Don't confuse tuning with variable planning from poor lane markings, or unexpected behavior from unknown roads.
+ - Start with moderate values for outer (angle error) and inner (rate error) loops, e.g. Prius's outer 3, inner 4.
+ - Avoid instability
+  - Undertuned is sloppy, late, weave
+  - Overtuned is jerky, too early, over-correcting, oscillating
+  - Find the lower and upper edges of stability, then use a performant moderate value.
+ - INDI tunes live in `selfdrive/car/<make>/tunes.py`
+
+1. **CRITICAL**: Tune `steerActuatorDelay` first.
+2. Tune actuator effectiveness. Lowest value without over-saturating (feels like bang-bang control). (May vary with speed?)
+3. Tune time constant. Lowest value with smooth actuation. This is an exponential moving average of previous outputs.
+4. Tune inner loop (rate error gain). Highest value that still gives smooth control. Effects turning into curves. This multiplies the outer loop, so increasing this may need to decrease the outer loop.
+5. Tune outer loop (angle error gain). Highest value that still gives smooth control. Effects lane centering.
+
+### Notes on INDI tuning parameters
+* `steerActuatorDelay`
+  * Plan(`now + steerActuatorDelay`) -> Vehicle Model -> Desired Steer Output
+  * Emits controls ahead on plan
+  * Crude
+    * If turning too early, decrease `steerActuatorDelay`
+    * If turning too late, increase `steerActuatorDelay`
+    * On straight section, vary in small steps +/- from best guess until the plan wobbles. Use mid-point.
+  * Fine
+    * Normalize steer torque command and lateral acceleration, which should be dependent but delayed
+    * Find median phase delay in frequency domain?
+    * Find maximum correlation when varying time delay?
+* `lateralTuning.indi.actuatorEffectiveness`
+  * As effectiveness increases, actuation strength decreases
+  * Too high: weak, sloppy lane centering, slow oscillation, can't follow high curvature, high steering error causes snappy corrections
+  * Too low: overpower, saturation, jerky, fast oscillation, bang-bang control
+  * Just right: Highest value able to maintain good lane centering.
+* `lateralTuning.indi.timeConstant`
+  * Exponential moving average of prior output steer
+  * Too high: sloppy lane centering
+  * Too low: noisy actuation, responds to every bump, maybe unable to maintain lane center due to rapid actuation
+  * Just right: above noisy actuation and lane centering instability
+* `lateralTuning.indi.innerLoopGain`
+  * Steer rate error gain
+  * Too high: jerky oscillation in high curvature
+  * Too low: sloppy, cannot accomplish desired steer angle
+  * Just right: brief snap on entering high curvature
+* `lateralTuning.indi.outerLoopGain`
+  * Steer error gain
+  * Too high: twitchy hyper lane centering, oversteering
+  * Too low: sloppy, long hugging in turns (not to be confused with over/understeering), all over lane (no tendency to approach the center)
+  * Just right: crisp lane centering
+
+# Longitudinal Tuning
+[Skip to tuning](#Tuning-the-longitudinal-PI-controller)
+
+## Introduction
+
+### Understanding how openpilot decides what speed to travel
+*This will change when comma.ai moves to using the driving model for full longitudinal control*.
+
+openpilot uses your car's radar (which returns up to 16 to 18 detected objects) and the driving model to select a radar point using the camera. openpilot runs the selected radar point (called a lead) through a kalman filter to get a more accurate acceleration and speed of the lead. The lead's speed, acceleration, and distance is sent to a longitudinal [MPC](//en.wikipedia.org/wiki/Model_predictive_control) which after some complex math returns a desired speed to travel (along with desired acceleration) to [long_mpc.py](/commaai/openpilot/blob/master/selfdrive/controls/lib/long_mpc.py). This speed (which we'll mostly focus on) is then used by [longcontrol.py](/commaai/openpilot/blob/master/selfdrive/controls/lib/longcontrol.py) and a PI loop (not PID) which controls the gas and brakes.
+
+**TL;DR**: Input the lead's **speed**, **acceleration**, and **distance** to the `LongitudinalMpc`, and a desired speed to travel is returned (along with extra values like future desired speed, acceleration, etc.).
+
+### Your vehicle's interface file
+Now that you have some background on how openpilot's `LongitudinalMpc` works (it's not necessary to understand everything), we can move on to understanding how the PI loop controls your vehicle's gas and brakes and subsequently actually tuning your vehicle. Here are some of the parameters that `longcontrol`'s PI loop uses to output a gas signal sent to the car.
+
+```python
+# selfdrive/car/toyota/tunes.py
+
+tune.deadzoneBP = [0., 8.05]
+tune.deadzoneV = [.0, .14]
+tune.kpBP = [0., 5., 20.]
+tune.kpV = [1.3, 1.0, 0.7]
+tune.kiBP = [0., 5., 12., 20., 27.]
+tune.kiV = [.35, .23, .20, .17, .1]
+```
+
+## Understanding the PI controller
+* Proportional (`kpBP` and `kpV`):
+  - Again, `kpBP` is the [breakpoint list](breakpoint-bp-and-value-v-lists) and `kpV` is the values list that the PI loop uses in operation. `kpV` or `kp` stands for proportional gain, and it's the simplest part of the PI controller. If you just had a P controller the output would simply be defined as `(desired speed - current speed) * proportional gain`. The first section is also known as the *error*. In code (from `pid.py`), this would look like: `error * self.k_p`. That proportional gain we're multiplying here changes based on your speed.
+
+    Once you get the output, you would simply return the value and use it as the gas/brake value to send to the car.
+
+* Integral (`kiBP` and `kiV`):
+  - `kiV` or `ki` stands for integral gain. You can think of integral as the error (again, `desired speed - current speed`) that builds up over time. For a simple example, let's say that the error is `1` for one iteration (desired speed is 1 mph faster than our current speed). Then in the next iteration let's say we're still traveling at the same speed and we still want to go 1 mph faster.
+
+    We now take the previous error and the current error, which both are `1` and sum them. Now our integral value is `2` (not gain, that's what is multiplied by `2` here to get the final output). This continues forever, so if the error is too small from proportional to bring us to our desired speed (think something like 50 mph - 49.5 mph), integral would build up over time and help us apply more gas to reach the desired speed.
+
+    In a more concrete example, let's say we're approaching a steep hill and we want to maintain our speed of 50 mph. Of course the hill makes us lose some speed initially as the incline starts to increase, so proportional would kick in as our error increases. However, once we get close enough to the desired speed again, the output of proportional would fall to near 0, causing us to lose speed again. Here's where integral steps in. It can see the sum of the past errors, so integral would build up the longer we're lower than 50 mph, causing a higher gas output.
+
+    In pseudo code, this looks like `self.i = self.i + (error * integral gain)`. You can see the two things that increase the output of the integral factor are error and time. If the error is large, integral increases. And if any error exists for some amount of time, integral increases.
+
+* `gasMaxBP` and `gasMaxV`:
+  - `gasMaxV` represents the maximum percentage of gas (0 being no gas and 1 being 100% gas) allowed to be output by the PI loop. Since `gasMaxBP = [0.]` and `gasMaxV = [0.5]`, the maximum gas allowed by the PI loop is 50% which is used at all speeds.
+
+**The output of the PI loop (excluding feedforward) is essentially the sum of the output of the proportional factor and integral factor. `control = self.p + self.i`**
+
+## Tuning the longitudinal PI controller
+The two main factors you can tune to get a different response out of the long PI loop are of course proportional and integral. *To make the tuning process less complex, it's said to set the integral gain to all 0's so the only thing that's interacting with the output is proportional at first.*
+
+- When to **increase** proportional:
+  1. If your car doesn't give enough gas or brake to reach the set cruise speed in a timely manner.
+  2. If your car doesn't brake enough when you approach a stopped lead.
+- When to **decrease** proportional:
+  1. If your car applies so much gas or brake trying to reach the desired speed that it doesn't feel smooth.
+  2. If it doesn't feel smooth when reacting to a change in desired speed.
+
+After you have it tuned so that it feels smooth enough either cruising without a lead, or with a lead that is always changing its speed, it's time to start tuning integral.
+
+- When to **increase** integral:
+  1. If when the lead is decelerating/accelerating over a few seconds and the car doesn't give enough gas or brake to maintain a safe/reasonable distance
+  2. If you're traveling up or down a hill and the car doesn't give enough gas or brake to maintain your desired speed.
+- When to **decrease** integral:
+  1. If you start to experience overshoot (most easily identifiable on hills); ex. once you reach the crest of a hill and your car continues to apply gas when it should start to ease off.
+
+# Appendix
+
+## Speed Conversion Table
+| m/s | mph | kph |
+|-----|-----|-----|
+| 5   | 11  | 18  |
+| 10  | 22  | 36  |
+| 15  | 34  | 54  |
+| 20  | 45  | 72  |
+| 25  | 56  | 90  |
+| 30  | 67  | 108 |
+| 35  | 78  | 126 |
+| 40  | 89  | 144 |
