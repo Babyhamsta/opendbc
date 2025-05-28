@@ -126,18 +126,7 @@ class CarInterface(CarInterfaceBase):
 
     elif candidate == CAR.HONDA_ACCORD_11G:
       ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 12288], [0, 12288]]
-      #ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.2], [0.18]] Original tune by Hamsta on 4096 torque.
-
-      # Tune from HexaDecibel
-      ret.lateralParams.torqueBP = [0, 12288]
-      ret.lateralParams.torqueV = [0, 12288]
-
-      ret.lateralTuning.pid.kpBP = [0.0, 10.0, 20.0]
-      ret.lateralTuning.pid.kpV = [0.05, 0.10, 0.18]
-
-      ret.lateralTuning.pid.kiBP = [0.0, 10.0, 20.0]
-      ret.lateralTuning.pid.kiV = [0.03, 0.08, 0.14]
-
+      ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.2], [0.18]] # Original tune by Hamsta on 4096 torque.
       ret.steerActuatorDelay = 0.2
 
       CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 1060]
@@ -164,7 +153,7 @@ class CarInterface(CarInterfaceBase):
       ret.wheelSpeedFactor = 1.025
 
     elif candidate in (CAR.HONDA_CRV_HYBRID, CAR.HONDA_CRV_HYBRID_6G):
-      ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 6912], [0, 6912]]  # TODO: determine if there is a dead zone at the top end
+      ret.lateralParams.torqueBP, ret.lateralParams.torqueV = [[0, 6272], [0, 6272]]  # TODO: determine if there is a dead zone at the top end
       ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.6], [0.18]]
       ret.wheelSpeedFactor = 1.025
 
